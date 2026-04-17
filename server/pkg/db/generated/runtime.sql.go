@@ -118,18 +118,24 @@ const findLegacyRuntimeByDaemonID = `-- name: FindLegacyRuntimeByDaemonID :one
 SELECT id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at, created_at, updated_at, owner_id, legacy_daemon_id FROM agent_runtime
 WHERE workspace_id = $1
   AND provider = $2
-  AND daemon_id = $3
+  AND LOWER(daemon_id) = LOWER($3)
 `
 
 type FindLegacyRuntimeByDaemonIDParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	Provider    string      `json:"provider"`
-	DaemonID    pgtype.Text `json:"daemon_id"`
+	DaemonID    string      `json:"daemon_id"`
 }
 
 // Looks up a runtime row keyed on a prior (hostname-derived) daemon_id. Used
 // at register-time to find rows owned by the same machine under its old
 // identity so agents/tasks can be re-pointed at the new UUID-keyed row.
+//
+// Comparison is case-insensitive because os.Hostname() has been observed to
+// return different casings on the same machine (e.g. `Jiayuans-MacBook-Pro`
+// vs `jiayuans-macbook-pro`) across reboots/mDNS state changes. A case-
+// sensitive `=` would strand the old row; LOWER() on both sides handles drift
+// without forcing the daemon to enumerate cased permutations.
 func (q *Queries) FindLegacyRuntimeByDaemonID(ctx context.Context, arg FindLegacyRuntimeByDaemonIDParams) (AgentRuntime, error) {
 	row := q.db.QueryRow(ctx, findLegacyRuntimeByDaemonID, arg.WorkspaceID, arg.Provider, arg.DaemonID)
 	var i AgentRuntime

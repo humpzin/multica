@@ -83,10 +83,16 @@ DELETE FROM agent WHERE runtime_id = $1 AND archived_at IS NOT NULL;
 -- Looks up a runtime row keyed on a prior (hostname-derived) daemon_id. Used
 -- at register-time to find rows owned by the same machine under its old
 -- identity so agents/tasks can be re-pointed at the new UUID-keyed row.
+--
+-- Comparison is case-insensitive because os.Hostname() has been observed to
+-- return different casings on the same machine (e.g. `Jiayuans-MacBook-Pro`
+-- vs `jiayuans-macbook-pro`) across reboots/mDNS state changes. A case-
+-- sensitive `=` would strand the old row; LOWER() on both sides handles drift
+-- without forcing the daemon to enumerate cased permutations.
 SELECT * FROM agent_runtime
-WHERE workspace_id = $1
-  AND provider = $2
-  AND daemon_id = $3;
+WHERE workspace_id = @workspace_id
+  AND provider = @provider
+  AND LOWER(daemon_id) = LOWER(@daemon_id);
 
 -- name: ReassignAgentsToRuntime :execrows
 -- Re-points every agent referencing old_runtime_id at new_runtime_id.

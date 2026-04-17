@@ -334,7 +334,7 @@ func (h *Handler) mergeLegacyRuntimes(r *http.Request, registered db.AgentRuntim
 		old, err := h.Queries.FindLegacyRuntimeByDaemonID(r.Context(), db.FindLegacyRuntimeByDaemonIDParams{
 			WorkspaceID: registered.WorkspaceID,
 			Provider:    provider,
-			DaemonID:    strToText(legacyID),
+			DaemonID:    legacyID,
 		})
 		if err != nil {
 			// sql.ErrNoRows is the expected common case — nothing to migrate.

@@ -89,25 +89,29 @@ func EnsureDaemonID(profile string) (string, error) {
 //   - pre-#1070: "<hostname>"                  (raw hostname, often ends in .local)
 //   - current:   "<hostname>" with .local drift depending on system state
 //
-// Because os.Hostname() may return either "foo" or "foo.local" depending on
-// system state at registration time, we always emit both variants as legacy
-// candidates so migration covers any prior registration.
+// .local drift is bidirectional — at different times os.Hostname() has
+// returned both "foo" and "foo.local" on the same machine (mDNS state,
+// system restart, login item order). So regardless of which form is current
+// now, we always emit BOTH the bare and .local-suffixed variants so migration
+// covers whichever form was persisted previously. Case drift is handled on
+// the server side via case-insensitive lookup, so we don't also emit cased
+// permutations here.
 func LegacyDaemonIDs(hostname, profile string) []string {
 	host := strings.TrimSpace(hostname)
 	if host == "" {
 		return nil
 	}
 	stripped := strings.TrimSuffix(host, ".local")
+	dotLocal := stripped + ".local"
 
-	candidates := []string{host}
-	if stripped != host {
-		candidates = append(candidates, stripped)
-	}
+	hostForms := []string{stripped, dotLocal}
+
+	candidates := make([]string, 0, len(hostForms)*2)
+	candidates = append(candidates, hostForms...)
 	if profile != "" {
-		candidates = append(candidates,
-			host+"-"+profile,
-			stripped+"-"+profile,
-		)
+		for _, h := range hostForms {
+			candidates = append(candidates, h+"-"+profile)
+		}
 	}
 
 	seen := make(map[string]struct{}, len(candidates))

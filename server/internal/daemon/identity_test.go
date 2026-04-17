@@ -96,36 +96,56 @@ func TestLegacyDaemonIDs(t *testing.T) {
 		want     []string
 	}{
 		{
+			// Bare hostname now — but the DB may still hold the previously
+			// registered `.local` variant, so we must emit both.
 			name:     "plain hostname, no profile",
 			hostname: "MacBook-Pro",
-			want:     []string{"MacBook-Pro"},
+			want:     []string{"MacBook-Pro", "MacBook-Pro.local"},
 		},
 		{
+			// Dot-local hostname now — the stripped variant may be what the
+			// DB holds from a prior registration where .local was absent.
 			name:     "dot-local hostname, no profile",
 			hostname: "MacBook-Pro.local",
-			want:     []string{"MacBook-Pro.local", "MacBook-Pro"},
+			want:     []string{"MacBook-Pro", "MacBook-Pro.local"},
 		},
 		{
 			name:     "plain hostname with profile",
 			hostname: "MacBook-Pro",
 			profile:  "staging",
-			want:     []string{"MacBook-Pro", "MacBook-Pro-staging"},
+			want: []string{
+				"MacBook-Pro",
+				"MacBook-Pro.local",
+				"MacBook-Pro-staging",
+				"MacBook-Pro.local-staging",
+			},
 		},
 		{
 			name:     "dot-local hostname with profile",
 			hostname: "MacBook-Pro.local",
 			profile:  "staging",
 			want: []string{
-				"MacBook-Pro.local",
 				"MacBook-Pro",
-				"MacBook-Pro.local-staging",
+				"MacBook-Pro.local",
 				"MacBook-Pro-staging",
+				"MacBook-Pro.local-staging",
 			},
 		},
 		{
 			name:     "empty hostname",
 			hostname: "",
 			want:     nil,
+		},
+		{
+			// Case drift is handled on the server side (LOWER=LOWER match).
+			// We still emit the hostname in its current casing here; the SQL
+			// query normalizes both sides.
+			name:     "mixed case hostname preserved as-is",
+			hostname: "Jiayuans-MacBook-Pro.local",
+			want: []string{
+				"Jiayuans-MacBook-Pro",
+				"Jiayuans-MacBook-Pro.local",
+			},
 		},
 	}
 

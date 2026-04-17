@@ -784,6 +784,130 @@ func TestDaemonRegister_MergesLegacyDaemonIDRuntime(t *testing.T) {
 	}
 }
 
+// TestDaemonRegister_MergesLegacyDaemonIDRuntime_ReverseDotLocal covers the
+// direction missed by the initial implementation: the stored runtime row is
+// `host` (no `.local`) but the daemon's current `os.Hostname()` now returns
+// `host.local`. The daemon must emit the bare variant as a legacy candidate
+// and the server must match it.
+func TestDaemonRegister_MergesLegacyDaemonIDRuntime_ReverseDotLocal(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	ctx := context.Background()
+	const legacyDaemonID = "ReverseDotLocalHost"                          // stored without .local
+	const emittedLegacyID = "ReverseDotLocalHost.local"                    // daemon now reports with .local
+	const newDaemonID = "0192a7b0-0011-7ee9-9c21-30a5bcf86aa2"
+
+	var legacyRuntimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, owner_id, last_seen_at)
+		VALUES ($1, $2, 'legacy-runtime-reverse', 'local', 'claude', 'offline', '', '{}'::jsonb, $3, now())
+		RETURNING id
+	`, testWorkspaceID, legacyDaemonID, testUserID).Scan(&legacyRuntimeID); err != nil {
+		t.Fatalf("seed legacy runtime: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, legacyRuntimeID)
+	})
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/daemon/register", map[string]any{
+		"workspace_id":      testWorkspaceID,
+		"daemon_id":         newDaemonID,
+		"legacy_daemon_ids": []string{"ReverseDotLocalHost", emittedLegacyID},
+		"device_name":       "ReverseDotLocalHost",
+		"runtimes": []map[string]any{
+			{"name": "reverse-runtime", "type": "claude", "version": "1.0.0", "status": "online"},
+		},
+	})
+	testHandler.DaemonRegister(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("DaemonRegister: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	newRuntimeID := resp["runtimes"].([]any)[0].(map[string]any)["id"].(string)
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, newRuntimeID)
+	})
+
+	var legacyCount int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM agent_runtime WHERE id = $1`, legacyRuntimeID).Scan(&legacyCount); err != nil {
+		t.Fatalf("count legacy runtime: %v", err)
+	}
+	if legacyCount != 0 {
+		t.Fatalf("expected legacy row to be merged and deleted, still present")
+	}
+}
+
+// TestDaemonRegister_MergesLegacyDaemonIDRuntime_CaseDrift verifies that
+// case-only drift in os.Hostname() output (e.g. `Jiayuans-MacBook-Pro.local`
+// vs `jiayuans-macbook-pro.local`) still merges the legacy row. The daemon
+// emits the id in its current casing; the server-side lookup uses LOWER() on
+// both sides so stored and emitted casings can differ without orphaning.
+func TestDaemonRegister_MergesLegacyDaemonIDRuntime_CaseDrift(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	ctx := context.Background()
+	const storedDaemonID = "Jiayuans-MacBook-Pro.local"     // DB has original mixed case
+	const emittedLegacyID = "jiayuans-macbook-pro.local"    // Daemon now reports lowercased
+	const newDaemonID = "0192a7b0-0022-7ee9-9c21-30a5bcf86aa3"
+
+	var legacyRuntimeID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_runtime (workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, owner_id, last_seen_at)
+		VALUES ($1, $2, 'legacy-runtime-case', 'local', 'claude', 'offline', '', '{}'::jsonb, $3, now())
+		RETURNING id
+	`, testWorkspaceID, storedDaemonID, testUserID).Scan(&legacyRuntimeID); err != nil {
+		t.Fatalf("seed legacy runtime: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, legacyRuntimeID)
+	})
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/daemon/register", map[string]any{
+		"workspace_id":      testWorkspaceID,
+		"daemon_id":         newDaemonID,
+		"legacy_daemon_ids": []string{emittedLegacyID},
+		"device_name":       "jiayuans-macbook-pro",
+		"runtimes": []map[string]any{
+			{"name": "case-drift-runtime", "type": "claude", "version": "1.0.0", "status": "online"},
+		},
+	})
+	testHandler.DaemonRegister(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("DaemonRegister: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	newRuntimeID := resp["runtimes"].([]any)[0].(map[string]any)["id"].(string)
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM agent_runtime WHERE id = $1`, newRuntimeID)
+	})
+
+	var legacyCount int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM agent_runtime WHERE id = $1`, legacyRuntimeID).Scan(&legacyCount); err != nil {
+		t.Fatalf("count legacy runtime: %v", err)
+	}
+	if legacyCount != 0 {
+		t.Fatalf("expected case-drift legacy row to be merged and deleted, still present")
+	}
+
+	var legacyTrace *string
+	if err := testPool.QueryRow(ctx, `SELECT legacy_daemon_id FROM agent_runtime WHERE id = $1`, newRuntimeID).Scan(&legacyTrace); err != nil {
+		t.Fatalf("read legacy_daemon_id: %v", err)
+	}
+	if legacyTrace == nil || *legacyTrace != emittedLegacyID {
+		t.Fatalf("expected legacy_daemon_id trace = %q, got %v", emittedLegacyID, legacyTrace)
+	}
+}
+
 // TestDaemonRegister_LegacyIDNoMatchIsNoop guards the common case where the
 // daemon sends legacy candidates but no matching row exists (e.g. first
 // registration on a fresh machine). Registration must still succeed, the new
