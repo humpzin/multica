@@ -206,8 +206,13 @@ func (h *Handler) resolveActor(r *http.Request, userID, workspaceID string) (act
 		return "member", userID
 	}
 
+	agentUUID, err := util.ParseUUID(agentID)
+	if err != nil {
+		slog.Debug("resolveActor: X-Agent-ID is not a valid UUID, falling back to member", "agent_id", agentID)
+		return "member", userID
+	}
 	// Validate the agent exists in the target workspace.
-	agent, err := h.Queries.GetAgent(r.Context(), parseUUID(agentID))
+	agent, err := h.Queries.GetAgent(r.Context(), agentUUID)
 	if err != nil || uuidToString(agent.WorkspaceID) != workspaceID {
 		slog.Debug("resolveActor: X-Agent-ID rejected, agent not found or workspace mismatch", "agent_id", agentID, "workspace_id", workspaceID)
 		return "member", userID
@@ -215,7 +220,12 @@ func (h *Handler) resolveActor(r *http.Request, userID, workspaceID string) (act
 
 	// When X-Task-ID is provided, cross-check that the task belongs to this agent.
 	if taskID := r.Header.Get("X-Task-ID"); taskID != "" {
-		task, err := h.Queries.GetAgentTask(r.Context(), parseUUID(taskID))
+		taskUUID, err := util.ParseUUID(taskID)
+		if err != nil {
+			slog.Debug("resolveActor: X-Task-ID is not a valid UUID, falling back to member", "task_id", taskID)
+			return "member", userID
+		}
+		task, err := h.Queries.GetAgentTask(r.Context(), taskUUID)
 		if err != nil || uuidToString(task.AgentID) != agentID {
 			slog.Debug("resolveActor: X-Task-ID rejected, task not found or agent mismatch", "agent_id", agentID, "task_id", taskID)
 			return "member", userID

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/realtime"
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 var testHandler *Handler
@@ -335,6 +337,10 @@ func TestIssueCRUD(t *testing.T) {
 // identifier ("HAN-42") rather than a UUID. Before the PR #1680 + MUL-1410
 // refactor, parseUUID(rawString) silently produced a zero UUID, the SQL
 // DELETE matched nothing, and the handler still returned 204.
+//
+// Also asserts the issue:deleted WS event payload carries the resolved UUID,
+// not the raw identifier — frontend caches key by UUID and would otherwise
+// leave stale entries on other clients after an identifier-path delete.
 func TestDeleteIssueByIdentifier(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
@@ -351,6 +357,17 @@ func TestDeleteIssueByIdentifier(t *testing.T) {
 	if created.Identifier == "" {
 		t.Fatalf("CreateIssue: expected identifier to be populated, got empty")
 	}
+
+	// Capture the issue:deleted event payload via the bus.
+	gotPayload := make(chan map[string]any, 1)
+	testHandler.Bus.Subscribe(protocol.EventIssueDeleted, func(e events.Event) {
+		if payload, ok := e.Payload.(map[string]any); ok {
+			select {
+			case gotPayload <- payload:
+			default:
+			}
+		}
+	})
 
 	// Delete using the human-readable identifier (e.g. "HAN-1") rather than the UUID.
 	w = httptest.NewRecorder()
@@ -371,6 +388,17 @@ func TestDeleteIssueByIdentifier(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("DeleteIssue by identifier returned 204 but row still exists (count=%d) — silent-data-loss regression", count)
+	}
+
+	// Event payload must carry the resolved UUID, not the identifier string.
+	select {
+	case payload := <-gotPayload:
+		issueID, _ := payload["issue_id"].(string)
+		if issueID != created.ID {
+			t.Fatalf("issue:deleted event payload issue_id = %q; want resolved UUID %q (must not leak identifier %q)", issueID, created.ID, created.Identifier)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not receive issue:deleted event within timeout")
 	}
 }
 
