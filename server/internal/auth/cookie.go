@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,6 +23,34 @@ const (
 )
 
 var ipCookieDomainWarnOnce sync.Once
+
+var defaultCSRFOrigins = []string{
+	"http://localhost:3000",
+	"http://localhost:5173",
+	"http://localhost:5174",
+}
+
+var allowedCSRFOrigins atomic.Value // holds []string
+
+func init() {
+	allowedCSRFOrigins.Store(defaultCSRFOrigins)
+}
+
+// SetAllowedCSRFOrigins configures the trusted browser origins for CSRF
+// origin checks. Empty values fall back to the local development defaults.
+func SetAllowedCSRFOrigins(origins []string) {
+	cleaned := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			cleaned = append(cleaned, origin)
+		}
+	}
+	if len(cleaned) == 0 {
+		cleaned = defaultCSRFOrigins
+	}
+	allowedCSRFOrigins.Store(cleaned)
+}
 
 // cookieDomain returns the trimmed COOKIE_DOMAIN env value, or "" if it looks
 // like an IP address. RFC 6265 §4.1.2.3 forbids IP literals in the cookie
@@ -147,7 +176,7 @@ func ClearAuthCookies(w http.ResponseWriter) {
 	})
 }
 
-// ValidateCSRF checks the X-CSRF-Token header against the auth cookie.
+// ValidateCSRF checks the request origin and X-CSRF-Token header against the auth cookie.
 // The CSRF token is HMAC-signed with the auth token, so the server verifies
 // the signature rather than simply comparing cookie == header.
 // Returns true if validation passes (including for safe methods that don't need CSRF).
@@ -155,6 +184,10 @@ func ValidateCSRF(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return true
+	}
+
+	if !validateCSRFOrigin(r) {
+		return false
 	}
 
 	csrfHeader := r.Header.Get("X-CSRF-Token")
@@ -185,4 +218,35 @@ func ValidateCSRF(r *http.Request) bool {
 	mac := hmac.New(sha256.New, []byte(authCookie.Value))
 	mac.Write(nonce)
 	return hmac.Equal(mac.Sum(nil), expectedSig)
+}
+
+func validateCSRFOrigin(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		referer := strings.TrimSpace(r.Header.Get("Referer"))
+		if referer == "" {
+			return true
+		}
+		var ok bool
+		origin, ok = originFromReferer(referer)
+		if !ok {
+			return false
+		}
+	}
+
+	origins := allowedCSRFOrigins.Load().([]string)
+	for _, allowed := range origins {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func originFromReferer(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", false
+	}
+	return u.Scheme + "://" + u.Host, true
 }

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
@@ -98,4 +99,104 @@ func TestSetAuthCookies_HTTPSProduction(t *testing.T) {
 			t.Errorf("cookie %q Domain = %q, want %q", c.Name, c.Domain, "app.example.com")
 		}
 	}
+}
+
+func TestValidateCSRFOriginChecks(t *testing.T) {
+	t.Cleanup(func() {
+		SetAllowedCSRFOrigins(defaultCSRFOrigins)
+	})
+	SetAllowedCSRFOrigins([]string{"https://app.example.com", "http://localhost:3000"})
+
+	cases := []struct {
+		name    string
+		origin  string
+		referer string
+		want    bool
+	}{
+		{
+			name: "missing origin and referer passes",
+			want: true,
+		},
+		{
+			name:   "matching origin passes",
+			origin: "https://app.example.com",
+			want:   true,
+		},
+		{
+			name:   "matching origin from allowlist passes",
+			origin: "http://localhost:3000",
+			want:   true,
+		},
+		{
+			name:   "mismatched origin fails",
+			origin: "https://evil.example.com",
+			want:   false,
+		},
+		{
+			name:    "matching referer fallback passes",
+			referer: "https://app.example.com/issues/123",
+			want:    true,
+		},
+		{
+			name:    "mismatched referer fallback fails",
+			referer: "https://evil.example.com/issues/123",
+			want:    false,
+		},
+		{
+			name:    "malformed referer fallback fails",
+			referer: "://not-a-url",
+			want:    false,
+		},
+		{
+			name:    "origin mismatch takes precedence over matching referer",
+			origin:  "https://evil.example.com",
+			referer: "https://app.example.com/issues/123",
+			want:    false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := validCSRFRequest(t, http.MethodPost)
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.referer != "" {
+				req.Header.Set("Referer", tc.referer)
+			}
+
+			if got := ValidateCSRF(req); got != tc.want {
+				t.Fatalf("ValidateCSRF() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateCSRFSkipsOriginCheckForSafeMethods(t *testing.T) {
+	t.Cleanup(func() {
+		SetAllowedCSRFOrigins(defaultCSRFOrigins)
+	})
+	SetAllowedCSRFOrigins([]string{"https://app.example.com"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+
+	if !ValidateCSRF(req) {
+		t.Fatal("ValidateCSRF() rejected a safe method")
+	}
+}
+
+func validCSRFRequest(t *testing.T, method string) *http.Request {
+	t.Helper()
+
+	authToken := "test-auth-token"
+	csrfToken, err := generateCSRFToken(authToken)
+	if err != nil {
+		t.Fatalf("generateCSRFToken: %v", err)
+	}
+
+	req := httptest.NewRequest(method, "/api/issues", nil)
+	req.AddCookie(&http.Cookie{Name: AuthCookieName, Value: authToken})
+	req.Header.Set("X-CSRF-Token", csrfToken)
+	return req
 }
