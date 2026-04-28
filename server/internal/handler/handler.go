@@ -369,9 +369,17 @@ func (h *Handler) isWorkspaceEntity(ctx context.Context, userType, userID, works
 		_, err := h.getWorkspaceMember(ctx, userID, workspaceID)
 		return err == nil
 	case "agent":
-		_, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-			ID:          parseUUID(userID),
-			WorkspaceID: parseUUID(workspaceID),
+		userUUID, err := util.ParseUUID(userID)
+		if err != nil {
+			return false
+		}
+		wsUUID, err := util.ParseUUID(workspaceID)
+		if err != nil {
+			return false
+		}
+		_, err = h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+			ID:          userUUID,
+			WorkspaceID: wsUUID,
 		})
 		return err == nil
 	default:
@@ -530,9 +538,18 @@ func (h *Handler) loadInboxItemForUser(w http.ResponseWriter, r *http.Request, i
 		return db.InboxItem{}, false
 	}
 
+	itemUUID, ok := parseUUIDOrBadRequest(w, itemID, "inbox item id")
+	if !ok {
+		return db.InboxItem{}, false
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return db.InboxItem{}, false
+	}
+
 	item, err := h.Queries.GetInboxItemInWorkspace(r.Context(), db.GetInboxItemInWorkspaceParams{
-		ID:          parseUUID(itemID),
-		WorkspaceID: parseUUID(workspaceID),
+		ID:          itemUUID,
+		WorkspaceID: wsUUID,
 	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "inbox item not found")

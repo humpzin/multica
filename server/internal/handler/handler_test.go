@@ -1016,6 +1016,94 @@ func TestCreatePinRejectsMalformedItemID(t *testing.T) {
 	}
 }
 
+func TestUpdateWorkspaceRejectsMalformedID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("PUT", "/api/workspaces/not-a-uuid", map[string]any{
+		"name": "Malformed workspace id",
+	})
+	req = withURLParam(req, "id", "not-a-uuid")
+	testHandler.UpdateWorkspace(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateWorkspace: expected 400 for malformed id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateMemberRejectsMalformedMemberID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("PATCH", "/api/workspaces/"+testWorkspaceID+"/members/not-a-uuid", map[string]any{
+		"role": "member",
+	})
+	req = withURLParams(req, "id", testWorkspaceID, "memberId", "not-a-uuid")
+	testHandler.UpdateMember(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateMember: expected 400 for malformed memberId, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRevokeInvitationRejectsMalformedInvitationID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("DELETE", "/api/workspaces/"+testWorkspaceID+"/invitations/not-a-uuid", nil)
+	req = withURLParams(req, "id", testWorkspaceID, "invitationId", "not-a-uuid")
+	testHandler.RevokeInvitation(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("RevokeInvitation: expected 400 for malformed invitationId, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetMyInvitationRejectsMalformedID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("GET", "/api/invitations/not-a-uuid", nil)
+	req = withURLParam(req, "id", "not-a-uuid")
+	testHandler.GetMyInvitation(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("GetMyInvitation: expected 400 for malformed id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAddReactionRejectsMalformedCommentID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/comments/not-a-uuid/reactions", map[string]any{
+		"emoji": "thumbs_up",
+	})
+	req = withURLParam(req, "commentId", "not-a-uuid")
+	testHandler.AddReaction(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("AddReaction: expected 400 for malformed commentId, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateCommentRejectsMalformedCommentID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("PUT", "/api/comments/not-a-uuid", map[string]any{
+		"content": "updated",
+	})
+	req = withURLParam(req, "commentId", "not-a-uuid")
+	testHandler.UpdateComment(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateComment: expected 400 for malformed commentId, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMarkInboxReadRejectsMalformedItemID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/inbox/not-a-uuid/read", nil)
+	req = withURLParam(req, "id", "not-a-uuid")
+	testHandler.MarkInboxRead(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("MarkInboxRead: expected 400 for malformed id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRevokePersonalAccessTokenRejectsMalformedID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("DELETE", "/api/tokens/not-a-uuid", nil)
+	req = withURLParam(req, "id", "not-a-uuid")
+	testHandler.RevokePersonalAccessToken(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("RevokePersonalAccessToken: expected 400 for malformed id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAgentCRUD(t *testing.T) {
 	// List agents
 	w := httptest.NewRecorder()
