@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -87,9 +88,13 @@ func (d *Daemon) runTaskWakeupConnection(ctx context.Context, runtimeIDs []strin
 	}
 
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
-	conn, _, err := dialer.DialContext(ctx, wsURL, headers)
+	conn, resp, err := dialer.DialContext(ctx, wsURL, headers)
 	if err != nil {
-		return err
+		if resp != nil {
+			bodyPreview := readHandshakeBodyPreview(resp.Body)
+			return fmt.Errorf("task wakeup websocket dial failed: %w (status=%d, body=%q, url=%s)", err, resp.StatusCode, bodyPreview, sanitizeWakeupURLForLog(wsURL))
+		}
+		return fmt.Errorf("task wakeup websocket dial failed: %w (url=%s)", err, sanitizeWakeupURLForLog(wsURL))
 	}
 	defer conn.Close()
 
@@ -171,6 +176,39 @@ func taskWakeupURL(baseURL string, runtimeIDs []string) (string, error) {
 	u.RawQuery = q.Encode()
 	u.Fragment = ""
 	return u.String(), nil
+}
+
+func readHandshakeBodyPreview(body io.ReadCloser) string {
+	if body == nil {
+		return ""
+	}
+	defer body.Close()
+
+	const maxBytes = 2048
+	b, err := io.ReadAll(io.LimitReader(body, maxBytes))
+	if err != nil {
+		return "read_error"
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func sanitizeWakeupURLForLog(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	if q.Has("runtime_ids") {
+		ids := strings.TrimSpace(q.Get("runtime_ids"))
+		count := 0
+		if ids != "" {
+			count = len(strings.Split(ids, ","))
+		}
+		q.Set("runtime_count", fmt.Sprintf("%d", count))
+		q.Del("runtime_ids")
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
 }
 
 func sleepWithContextOrRuntimeChange(ctx context.Context, d time.Duration, runtimeSetCh <-chan struct{}) error {

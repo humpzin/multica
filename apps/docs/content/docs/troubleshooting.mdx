@@ -85,6 +85,35 @@ On the server side (self-host), grep for `"no_tasks"` / `"no_capacity"` to see t
 - Reverse proxy → in Nginx, add `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`
 - Cookie expired → refresh the page and sign in again
 
+## Daemon logs `websocket: bad handshake`
+
+**Symptom**: `multica daemon logs` repeatedly shows `task wakeup websocket unavailable` with `websocket: bad handshake`, while polling still keeps tasks moving.
+
+**What it means**: the daemon's wake-up WebSocket (`/api/daemon/ws`) did not receive `101 Switching Protocols`. The daemon keeps a polling fallback, but wake-up latency increases and root cause should be fixed.
+
+**How to diagnose quickly**:
+
+```bash
+multica daemon logs --lines 200
+curl -i http://<server-host>:8080/health
+curl -i http://<server-host>:8080/readyz
+```
+
+- In daemon logs, look at handshake details:
+  - `status=401` → token/auth issue (`multica logout && multica login`)
+  - `status=400` / `status=404` → runtime IDs/workspace mismatch, or wrong server URL
+  - no status with proxy errors → reverse proxy/WebSocket upgrade path issue
+- Confirm the daemon target URL:
+  - `multica daemon status --output json` (`server_url` should be your actual backend)
+- On reverse proxies, verify WebSocket Upgrade forwarding for `/api/daemon/ws` and `/ws`.
+
+**How to fix**:
+
+- Auth/token problem → re-login and restart daemon (`multica daemon restart`)
+- Wrong target URL → fix `MULTICA_SERVER_URL`, then restart daemon
+- Origin/CORS mismatch → align `FRONTEND_ORIGIN`, `CORS_ALLOWED_ORIGINS`, and `ALLOWED_ORIGINS`
+- Proxy handshake failure → add/verify `Upgrade` and `Connection: upgrade` headers, then reload proxy
+
 ## Emails not received
 
 **Symptom**: after submitting an email during sign-in or invite acceptance, neither the inbox nor the spam folder has the verification code.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -26,35 +27,6 @@ import (
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
-
-var defaultOrigins = []string{
-	"http://localhost:3000", // Next.js dev
-	"http://localhost:5173", // electron-vite dev
-	"http://localhost:5174", // electron-vite dev (fallback port)
-}
-
-func allowedOrigins() []string {
-	raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
-	if raw == "" {
-		raw = strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
-	}
-	if raw == "" {
-		return defaultOrigins
-	}
-
-	parts := strings.Split(raw, ",")
-	origins := make([]string, 0, len(parts))
-	for _, part := range parts {
-		origin := strings.TrimSpace(part)
-		if origin != "" {
-			origins = append(origins, origin)
-		}
-	}
-	if len(origins) == 0 {
-		return defaultOrigins
-	}
-	return origins
-}
 
 // NewRouter creates the fully-configured Chi router with all middleware and routes.
 // rdb is optional: when non-nil the runtime local-skill request stores are
@@ -121,7 +93,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	}
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.ContentSecurityPolicy)
-	origins := allowedOrigins()
+	origins := realtime.ResolveAllowedOriginsFromEnv()
+	logOriginGuardrails(origins)
 
 	// Share allowed origins with WebSocket origin checker.
 	realtime.SetAllowedOrigins(origins)
@@ -461,6 +434,36 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	})
 
 	return r
+}
+
+func logOriginGuardrails(origins []string) {
+	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	frontendOrigin := strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN"))
+	corsOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	allowedOrigins := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
+	if appEnv == "production" && frontendOrigin == "" {
+		slog.Warn("FRONTEND_ORIGIN is empty in production; websocket and invite URLs may break")
+	}
+	if frontendOrigin != "" && corsOrigins != "" && !originListContains(corsOrigins, frontendOrigin) {
+		slog.Warn("FRONTEND_ORIGIN is not present in CORS_ALLOWED_ORIGINS", "frontend_origin", frontendOrigin, "cors_allowed_origins", corsOrigins)
+	}
+	if allowedOrigins != "" && frontendOrigin != "" && !originListContains(allowedOrigins, frontendOrigin) {
+		slog.Warn("FRONTEND_ORIGIN is not present in ALLOWED_ORIGINS", "frontend_origin", frontendOrigin, "allowed_origins", allowedOrigins)
+	}
+	slog.Info("configured websocket/cors origins", "origins", origins)
+}
+
+func originListContains(csv, value string) bool {
+	target := strings.TrimSpace(value)
+	if target == "" {
+		return false
+	}
+	for _, part := range strings.Split(csv, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), target) {
+			return true
+		}
+	}
+	return false
 }
 
 // membershipChecker implements realtime.MembershipChecker using database queries.

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -41,10 +43,12 @@ type ScopeAuthorizer interface {
 var allowedWSOrigins atomic.Value // holds []string
 
 func init() {
-	allowedWSOrigins.Store(loadAllowedOrigins())
+	allowedWSOrigins.Store(ResolveAllowedOriginsFromEnv())
 }
 
-func loadAllowedOrigins() []string {
+// ResolveAllowedOriginsFromEnv resolves the effective WS/CORS origin list.
+// Priority: ALLOWED_ORIGINS -> CORS_ALLOWED_ORIGINS -> FRONTEND_ORIGIN -> localhost defaults.
+func ResolveAllowedOriginsFromEnv() []string {
 	raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
 	if raw == "" {
 		raw = strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
@@ -63,9 +67,16 @@ func loadAllowedOrigins() []string {
 	parts := strings.Split(raw, ",")
 	origins := make([]string, 0, len(parts))
 	for _, part := range parts {
-		origin := strings.TrimSpace(part)
+		origin := normalizeOrigin(strings.TrimSpace(part))
 		if origin != "" {
 			origins = append(origins, origin)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{
+			"http://localhost:3000",
+			"http://localhost:5173",
+			"http://localhost:5174",
 		}
 	}
 	return origins
@@ -77,7 +88,7 @@ func SetAllowedOrigins(origins []string) {
 }
 
 func checkOrigin(r *http.Request) bool {
-	origin := r.Header.Get("Origin")
+	origin := normalizeOrigin(r.Header.Get("Origin"))
 	if origin == "" {
 		return true
 	}
@@ -89,6 +100,37 @@ func checkOrigin(r *http.Request) bool {
 	}
 	slog.Warn("ws: rejected origin", "origin", origin)
 	return false
+}
+
+func normalizeOrigin(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return trimmed
+	}
+	host := strings.ToLower(u.Hostname())
+	port := u.Port()
+	if isDefaultPort(u.Scheme, port) {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	return strings.ToLower(u.Scheme) + "://" + host
+}
+
+func isDefaultPort(scheme, port string) bool {
+	switch strings.ToLower(scheme) {
+	case "http":
+		return port == "" || port == "80"
+	case "https":
+		return port == "" || port == "443"
+	default:
+		return port == ""
+	}
 }
 
 const (

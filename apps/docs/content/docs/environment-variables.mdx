@@ -129,10 +129,14 @@ For a full explanation of how each parameter affects daemon behavior, see [Daemo
 |---|---|---|
 | `FRONTEND_ORIGIN` | empty | Frontend address. Invite email links, the CORS allowlist, and the cookie domain are all derived from this. When unset, invite email links fall back to the hosted domain `https://app.multica.ai` — self-host must set this explicitly |
 | `CORS_ALLOWED_ORIGINS` | empty | Additional allowed CORS origins (comma-separated) |
-| `ALLOWED_ORIGINS` | empty | WebSocket-specific origin allowlist (comma-separated); when unset, fallback order is `CORS_ALLOWED_ORIGINS` → `FRONTEND_ORIGIN` → `localhost:3000/5173/5174` |
+| `ALLOWED_ORIGINS` | empty | Unified origin allowlist (comma-separated) used by both CORS and WebSocket checks; fallback order is `ALLOWED_ORIGINS` → `CORS_ALLOWED_ORIGINS` → `FRONTEND_ORIGIN` → `localhost:3000/5173/5174` |
 
 <Callout type="warning">
 **Leaving `FRONTEND_ORIGIN` unset creates two silent failures**: (1) invite email links point at `https://app.multica.ai` (the hosted domain), and clicking them doesn't bring users back to your self-hosted instance; (2) WebSocket Origin checks fall back to `localhost:3000 / 5173 / 5174`, so every WebSocket connection in a production deployment is rejected and the frontend appears to "lose real-time updates."
+</Callout>
+
+<Callout type="info">
+If you set both `FRONTEND_ORIGIN` and `CORS_ALLOWED_ORIGINS`, include `FRONTEND_ORIGIN` in `CORS_ALLOWED_ORIGINS`. If you also set `ALLOWED_ORIGINS`, include it there too to keep browser CORS and WebSocket Origin checks aligned.
 </Callout>
 
 ## Usage analytics

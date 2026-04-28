@@ -14,6 +14,9 @@ All configuration is done via environment variables. Copy `.env.example` as a st
 | `JWT_SECRET` | **Must change from default.** Secret key for signing JWT tokens. Use a long random string. | `openssl rand -hex 32` |
 | `FRONTEND_ORIGIN` | URL where the frontend is served (used for CORS) | `https://app.example.com` |
 
+`FRONTEND_ORIGIN` is required in production. If it is empty, browser WebSocket
+Origin checks fall back to localhost defaults and real-time updates fail.
+
 ### Database Pool Tuning (Optional)
 
 These have sensible defaults and only need to be set when tuning a large or constrained deployment. Precedence (highest first): env var → `pool_*` query params on `DATABASE_URL` → built-in default.
@@ -82,7 +85,13 @@ The `Secure` flag on session cookies is derived automatically from the scheme of
 | `METRICS_ADDR` | empty | Optional Prometheus metrics listener, for example `127.0.0.1:9090` |
 | `FRONTEND_PORT` | `3000` | Frontend port |
 | `CORS_ALLOWED_ORIGINS` | Value of `FRONTEND_ORIGIN` | Comma-separated list of allowed origins |
+| `ALLOWED_ORIGINS` | empty | Unified origin allowlist for CORS + WebSocket checks (highest priority) |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
+Origin resolution priority is:
+`ALLOWED_ORIGINS` → `CORS_ALLOWED_ORIGINS` → `FRONTEND_ORIGIN` → localhost defaults.
+For stable behavior, keep these lists aligned and include `FRONTEND_ORIGIN` in
+any explicit allowlist.
 
 ### CLI / Daemon
 

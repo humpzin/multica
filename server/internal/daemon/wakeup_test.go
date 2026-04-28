@@ -1,6 +1,10 @@
 package daemon
 
-import "testing"
+import (
+	"io"
+	"strings"
+	"testing"
+)
 
 func TestTaskWakeupURL(t *testing.T) {
 	tests := []struct {
@@ -39,5 +43,20 @@ func TestTaskWakeupURL(t *testing.T) {
 				t.Fatalf("taskWakeupURL() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSanitizeWakeupURLForLog(t *testing.T) {
+	got := sanitizeWakeupURLForLog("wss://api.example.com/api/daemon/ws?runtime_ids=a,b,c&x=1")
+	want := "wss://api.example.com/api/daemon/ws?runtime_count=3&x=1"
+	if got != want {
+		t.Fatalf("sanitizeWakeupURLForLog() = %q, want %q", got, want)
+	}
+}
+
+func TestReadHandshakeBodyPreview(t *testing.T) {
+	got := readHandshakeBodyPreview(io.NopCloser(strings.NewReader("  bad request  ")))
+	if got != "bad request" {
+		t.Fatalf("readHandshakeBodyPreview() = %q, want %q", got, "bad request")
 	}
 }
