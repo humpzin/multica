@@ -390,6 +390,7 @@ var cursorBlockedArgs = map[string]blockedArgMode{
 	"-p":              blockedStandalone, // non-interactive print mode
 	"--output-format": blockedWithValue,  // stream-json protocol
 	"--yolo":          blockedStandalone, // auto-approval for autonomous operation
+	"--trust":         blockedStandalone, // automatically trust workspace
 }
 
 // buildCursorArgs assembles the argv for a one-shot cursor-agent invocation.
@@ -400,9 +401,9 @@ var cursorBlockedArgs = map[string]blockedArgMode{
 func buildCursorArgs(prompt string, opts ExecOptions, logger *slog.Logger) []string {
 	args := []string{
 		"chat",
-		"-p", prompt,
 		"--output-format", "stream-json",
 		"--yolo",
+		"--trust",
 	}
 	if opts.Cwd != "" {
 		args = append(args, "--workspace", opts.Cwd)
@@ -416,5 +417,9 @@ func buildCursorArgs(prompt string, opts ExecOptions, logger *slog.Logger) []str
 		args = append(args, "--resume", opts.ResumeSessionID)
 	}
 	args = append(args, filterCustomArgs(opts.CustomArgs, cursorBlockedArgs, logger)...)
+	
+	// Add the prompt at the very end to prevent PowerShell argument truncation
+	args = append(args, "-p", prompt)
+	
 	return args
 }

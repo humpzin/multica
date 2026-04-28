@@ -252,8 +252,8 @@ var geminiBlockedArgs = map[string]blockedArgMode{
 
 func buildGeminiArgs(prompt string, opts ExecOptions, logger *slog.Logger) []string {
 	args := []string{
-		"-p", prompt,
 		"--yolo",
+		"--skip-trust",
 		"-o", "stream-json",
 	}
 	if opts.Model != "" {
@@ -263,5 +263,7 @@ func buildGeminiArgs(prompt string, opts ExecOptions, logger *slog.Logger) []str
 		args = append(args, "-r", opts.ResumeSessionID)
 	}
 	args = append(args, filterCustomArgs(opts.CustomArgs, geminiBlockedArgs, logger)...)
+	// append prompt at the very end to prevent newline truncation in Windows .cmd/.ps1 wrappers
+	args = append(args, "-p", prompt)
 	return args
 }
