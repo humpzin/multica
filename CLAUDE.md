@@ -26,7 +26,7 @@ Multica is an AI-native task management platform — like Linear, but with AI ag
 
 **Internal Packages pattern** — all shared packages export raw `.ts`/`.tsx` files (no pre-compilation). The consuming app's bundler compiles them directly. This gives zero-config HMR and instant go-to-definition.
 
-**Dependency direction:** `views/ → core/ + ui/`. Core and UI are independent of each other. No package imports from `next/*`, `react-router-dom`, or app-specific code.
+**Dependency direction:** `views/ → core/ + ui/`. Core and UI are independent of each other. No package imports from `next/`*, `react-router-dom`, or app-specific code.
 
 **Platform bridge:** `packages/core/platform/` provides `CoreProvider` — initializes API client, auth/workspace stores, WS connection, and QueryClient. Each app wraps its root with `<CoreProvider>` and provides its own `NavigationAdapter` for routing.
 
@@ -39,7 +39,7 @@ The architecture relies on a strict split between server state and client state.
 - **TanStack Query owns all server state.** Issues, users, workspaces, inbox — anything fetched from the API lives in the Query cache. WS events keep it fresh via invalidation; no polling, no `staleTime` workarounds.
 - **Zustand owns all client state.** UI selections, filters, drafts, modal state, navigation history. Stores live in `packages/core/` (never in `packages/views/`) so both apps share them.
 - **React Context** is reserved for cross-cutting platform plumbing — `WorkspaceIdProvider`, `NavigationProvider`. Don't reach for it for general state.
-- **Auth and workspace stores are the only stores allowed to call `api.*` directly**, because they manage critical state that must exist before queries can run. They're created via factory + injected dependencies, registered by the platform layer.
+- **Auth and workspace stores are the only stores allowed to call `api.`* directly**, because they manage critical state that must exist before queries can run. They're created via factory + injected dependencies, registered by the platform layer.
 
 **Hard rules — these are how the architecture stays coherent:**
 
@@ -143,7 +143,7 @@ Every Go handler in `server/internal/handler/` follows these rules. The conventi
 - **Resource path params that accept either a UUID or a human-readable identifier** (e.g. `chi.URLParam(r, "id")` for an issue, which accepts both `MUL-123` and a UUID) MUST be resolved through the dedicated loader (`loadIssueForUser` / `loadSkillForUser` / `loadAgentForUser` / `requireDaemonRuntimeAccess`). After resolution, all subsequent DB calls — especially `Queries.Delete*` / `Queries.Update*` — MUST use `entity.ID` from the resolved object. Never round-trip the raw URL string through `parseUUID` for a write query.
 - **Pure-UUID inputs from request boundaries** (URL params that are always UUIDs, request body fields, query params, headers) MUST be validated with `parseUUIDOrBadRequest(w, s, fieldName)`. On invalid input it writes a 400 and returns `ok=false` — return immediately.
 - **Trusted UUID round-trips** (sqlc-returned UUIDs being passed back into queries, test fixtures) use `parseUUID(s)` which calls `util.MustParseUUID` and panics on invalid input. A panic here means an unguarded user-input string slipped in — that is a real bug. `chi`'s `middleware.Recoverer` translates the panic into a 500 so the process keeps running.
-- **`util.ParseUUID(s) (pgtype.UUID, error)`** is the only safe variant outside the handler package. Always check the error.
+- `**util.ParseUUID(s) (pgtype.UUID, error)`** is the only safe variant outside the handler package. Always check the error.
 
 When adding a `Queries.Delete*` or `Queries.Update*` call, ask: "Where did this UUID come from?" If the answer is "raw user input that hasn't been validated," route it through `parseUUIDOrBadRequest` or a loader first.
 
@@ -153,7 +153,7 @@ These are hard constraints. Violating them breaks the cross-platform architectur
 
 - `packages/core/` — zero react-dom, zero localStorage (use StorageAdapter), zero process.env, zero UI libraries. **All shared Zustand stores live here**, even view-related ones (filters, view modes) — stores are pure state, not UI.
 - `packages/ui/` — zero `@multica/core` imports (pure UI, no business logic).
-- `packages/views/` — zero `next/*` imports, zero `react-router-dom` imports, zero stores. Use `NavigationAdapter` for all routing.
+- `packages/views/` — zero `next/`* imports, zero `react-router-dom` imports, zero stores. Use `NavigationAdapter` for all routing.
 - `apps/web/platform/` — the only place for Next.js APIs (`next/navigation`).
 - `apps/desktop/src/renderer/src/platform/` — the only place for react-router-dom navigation wiring.
 
@@ -173,7 +173,7 @@ When the two apps need different behavior for the same concept (e.g., different 
 
 When adding a new page or feature:
 
-1. **New page component** → add to `packages/views/<domain>/`. Never import from `next/*` or `react-router-dom`.
+1. **New page component** → add to `packages/views/<domain>/`. Never import from `next/`* or `react-router-dom`.
 2. **Wire it in both apps** → add a route in `apps/web/app/` (Next.js page file) AND in the desktop router. **Exception**: pre-workspace transition flows (create workspace, accept invite) are NOT routes on desktop — they're `WindowOverlay` state. See *Desktop-specific Rules → Route categories*.
 3. **Navigation** → use `useNavigation().push()` or `<AppLink>`. Never use framework-specific link/router APIs in shared code.
 4. **Shared guards/providers** → use `DashboardGuard` from `packages/views/layout/`. Don't create separate guard logic per app.
@@ -186,7 +186,7 @@ Both apps share the same CSS foundation from `packages/ui/styles/`.
 
 - **Design tokens** → use semantic tokens (`bg-background`, `text-muted-foreground`). Never use hardcoded Tailwind colors (`text-red-500`, `bg-gray-100`).
 - **Shared styles** → `packages/ui/styles/`. Never duplicate scrollbar styling, keyframes, or base layer rules in app CSS.
-- **`@source` directives** → both apps scan shared packages so Tailwind sees all class names.
+- `**@source` directives** → both apps scan shared packages so Tailwind sees all class names.
 
 ## Desktop-specific Rules
 
@@ -239,12 +239,14 @@ Every full-window desktop view (anything outside the dashboard shell) must mount
 
 Tests follow the code, not the app. This is the most important testing principle in this monorepo:
 
-| What you're testing | Where the test lives | Why |
-|---|---|---|
-| Shared business logic (stores, queries, hooks) | `packages/core/*.test.ts` | No DOM needed, pure logic |
-| Shared UI components (pages, forms, modals) | `packages/views/*.test.tsx` | jsdom, no framework mocks |
+
+| What you're testing                                         | Where the test lives                     | Why                            |
+| ----------------------------------------------------------- | ---------------------------------------- | ------------------------------ |
+| Shared business logic (stores, queries, hooks)              | `packages/core/*.test.ts`                | No DOM needed, pure logic      |
+| Shared UI components (pages, forms, modals)                 | `packages/views/*.test.tsx`              | jsdom, no framework mocks      |
 | Platform-specific wiring (cookies, redirects, searchParams) | `apps/web/*.test.tsx` or `apps/desktop/` | Needs framework-specific mocks |
-| End-to-end user flows | `e2e/*.spec.ts` | Real browser, real backend |
+| End-to-end user flows                                       | `e2e/*.spec.ts`                          | Real browser, real backend     |
+
 
 **Never test shared component behavior in an app's test file.** If a test requires mocking `next/navigation` or `react-router-dom` to test a component from `@multica/views`, the test is in the wrong place — move it to `packages/views/` and mock `@multica/core` instead.
 
@@ -262,7 +264,7 @@ All test deps are in the pnpm catalog for unified versioning.
 
 - Mock `@multica/core` stores with `vi.hoisted()` + `Object.assign(selectorFn, { getState })` pattern (Zustand stores are both callable and have `.getState()`).
 - Mock `@multica/core/api` for API calls.
-- In `packages/views/` tests: never mock `next/*` or `react-router-dom` — those don't exist here.
+- In `packages/views/` tests: never mock `next/`* or `react-router-dom` — those don't exist here.
 - In `apps/web/` tests: mock framework-specific APIs only for platform-specific behavior.
 
 ### TDD workflow
@@ -315,6 +317,7 @@ make check    # Runs all checks: typecheck, unit tests, Go tests, E2E
 Run verification only when the user explicitly asks for it.
 
 For targeted checks when requested:
+
 ```bash
 pnpm typecheck        # TypeScript type errors only
 pnpm test             # TS unit tests only (Vitest, all packages)
@@ -331,6 +334,7 @@ make check
 ```
 
 **Workflow:**
+
 - Write code to satisfy the requirement
 - Run `make check`
 - If any step fails, read the error output, fix the code, and re-run
