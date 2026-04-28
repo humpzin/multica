@@ -203,13 +203,23 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	var parentID pgtype.UUID
 	var parentComment *db.Comment
 	if req.ParentID != nil {
-		parentID = parseUUID(*req.ParentID)
+		var parsed pgtype.UUID
+		parsed, ok = parseUUIDOrBadRequest(w, *req.ParentID, "parent_id")
+		if !ok {
+			return
+		}
+		parentID = parsed
 		parent, err := h.Queries.GetComment(r.Context(), parentID)
-		if err != nil || uuidToString(parent.IssueID) != issueID {
+		if err != nil || uuidToString(parent.IssueID) != uuidToString(issue.ID) {
 			writeError(w, http.StatusBadRequest, "invalid parent comment")
 			return
 		}
 		parentComment = &parent
+	}
+
+	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
+	if !ok {
+		return
 	}
 
 	// Determine author identity: agent (via X-Agent-ID header) or member.
@@ -227,12 +237,15 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// tasks (no TriggerCommentID) are also unaffected.
 	if authorType == "agent" {
 		if taskIDHeader := r.Header.Get("X-Task-ID"); taskIDHeader != "" {
-			task, err := h.Queries.GetAgentTask(r.Context(), parseUUID(taskIDHeader))
-			if err == nil && task.TriggerCommentID.Valid && uuidToString(task.IssueID) == uuidToString(issue.ID) {
-				if uuidToString(parentID) != uuidToString(task.TriggerCommentID) {
-					writeError(w, http.StatusConflict,
-						"parent_id must equal this task's trigger comment id ("+uuidToString(task.TriggerCommentID)+")")
-					return
+			taskUUID, parseErr := util.ParseUUID(taskIDHeader)
+			if parseErr == nil {
+				task, err := h.Queries.GetAgentTask(r.Context(), taskUUID)
+				if err == nil && task.TriggerCommentID.Valid && uuidToString(task.IssueID) == uuidToString(issue.ID) {
+					if uuidToString(parentID) != uuidToString(task.TriggerCommentID) {
+						writeError(w, http.StatusConflict,
+							"parent_id must equal this task's trigger comment id ("+uuidToString(task.TriggerCommentID)+")")
+						return
+					}
 				}
 			}
 		}
@@ -263,8 +276,8 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Link uploaded attachments to this comment.
-	if len(req.AttachmentIDs) > 0 {
-		h.linkAttachmentsByIDs(r.Context(), comment.ID, issue.ID, req.AttachmentIDs)
+	if len(attachmentIDs) > 0 {
+		h.linkAttachmentsByIDs(r.Context(), comment.ID, issue.ID, attachmentIDs)
 	}
 
 	// Fetch linked attachments so the response includes them.

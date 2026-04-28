@@ -145,6 +145,19 @@ func parseUUIDOrBadRequest(w http.ResponseWriter, s, fieldName string) (pgtype.U
 	return u, true
 }
 
+func parseUUIDSliceOrBadRequest(w http.ResponseWriter, ids []string, fieldName string) ([]pgtype.UUID, bool) {
+	uuids := make([]pgtype.UUID, len(ids))
+	for i, id := range ids {
+		u, err := util.ParseUUID(id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid "+fieldName)
+			return nil, false
+		}
+		uuids[i] = u
+	}
+	return uuids, true
+}
+
 // publish sends a domain event through the event bus.
 func (h *Handler) publish(eventType, workspaceID, actorType, actorID string, payload any) {
 	h.Bus.Publish(events.Event{

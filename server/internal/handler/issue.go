@@ -941,6 +941,11 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
+	if !ok {
+		return
+	}
+
 	var dueDate pgtype.Timestamptz
 	if req.DueDate != nil && *req.DueDate != "" {
 		t, err := time.Parse(time.RFC3339, *req.DueDate)
@@ -999,15 +1004,15 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Link any pre-uploaded attachments to this issue.
-	if len(req.AttachmentIDs) > 0 {
-		h.linkAttachmentsByIssueIDs(r.Context(), issue.ID, issue.WorkspaceID, req.AttachmentIDs)
+	if len(attachmentIDs) > 0 {
+		h.linkAttachmentsByIssueIDs(r.Context(), issue.ID, issue.WorkspaceID, attachmentIDs)
 	}
 
 	prefix := h.getIssuePrefix(r.Context(), issue.WorkspaceID)
 	resp := issueToResponse(issue, prefix)
 
 	// Fetch linked attachments so they appear in the response.
-	if len(req.AttachmentIDs) > 0 {
+	if len(attachmentIDs) > 0 {
 		attachments, err := h.Queries.ListAttachmentsByIssue(r.Context(), db.ListAttachmentsByIssueParams{
 			IssueID:     issue.ID,
 			WorkspaceID: issue.WorkspaceID,

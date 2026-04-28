@@ -729,6 +729,31 @@ func TestCreateIssueRejectsMalformedAssigneeID(t *testing.T) {
 	}
 }
 
+func TestCreateIssueRejectsMalformedAttachmentIDBeforeWrite(t *testing.T) {
+	var before int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM issue WHERE workspace_id = $1`, testWorkspaceID).Scan(&before); err != nil {
+		t.Fatalf("count issues before: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title":          "Malformed attachment issue",
+		"attachment_ids": []string{"not-a-uuid"},
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreateIssue: expected 400 for malformed attachment_ids, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var after int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM issue WHERE workspace_id = $1`, testWorkspaceID).Scan(&after); err != nil {
+		t.Fatalf("count issues after: %v", err)
+	}
+	if after != before {
+		t.Fatalf("CreateIssue: malformed attachment_ids should not create issue, count before=%d after=%d", before, after)
+	}
+}
+
 // TestUpdateIssueRejectsMalformedAssigneeID is the equivalent for the update
 // path, where the same parseUUID-shaped gap existed on a previously-unassigned
 // issue.
@@ -875,6 +900,45 @@ func TestCommentCRUD(t *testing.T) {
 	req = newRequest("DELETE", "/api/issues/"+issueID, nil)
 	req = withURLParam(req, "id", issueID)
 	testHandler.DeleteIssue(w, req)
+}
+
+func TestCreateCommentRejectsMalformedParentID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title": "Comment malformed parent issue",
+	})
+	testHandler.CreateIssue(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateIssue: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var issue IssueResponse
+	json.NewDecoder(w.Body).Decode(&issue)
+
+	w = httptest.NewRecorder()
+	req = newRequest("POST", "/api/issues/"+issue.ID+"/comments", map[string]any{
+		"content":   "bad parent",
+		"parent_id": "not-a-uuid",
+	})
+	req = withURLParam(req, "id", issue.ID)
+	testHandler.CreateComment(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreateComment: expected 400 for malformed parent_id, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	req = newRequest("DELETE", "/api/issues/"+issue.ID, nil)
+	req = withURLParam(req, "id", issue.ID)
+	testHandler.DeleteIssue(w, req)
+}
+
+func TestGetChatSessionRejectsMalformedSessionID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("GET", "/api/chat/sessions/not-a-uuid", nil)
+	req = withURLParam(req, "sessionId", "not-a-uuid")
+	testHandler.GetChatSession(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("GetChatSession: expected 400 for malformed sessionId, got %d: %s", w.Code, w.Body.String())
+	}
 }
 
 func TestAgentCRUD(t *testing.T) {
@@ -1126,7 +1190,7 @@ func TestSendCodeDbError(t *testing.T) {
 	// We can't easily mock the DB here without changing architecture,
 	// but we can simulate a DB error by closing the pool temporarily or
 	// using a cancelled context if the query respects it.
-	
+
 	// Create a handler with a "broken" queries object is hard because it's a struct.
 	// Instead, let's use a context that is already cancelled.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1141,13 +1205,13 @@ func TestSendCodeDbError(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	testHandler.SendCode(w, req)
-	
+
 	// If the DB query respects the cancelled context, it should return an error.
 	// pgx usually returns context.Canceled which is not what isNotFound checks for.
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("SendCode (db error): expected 500, got %d: %s", w.Code, w.Body.String())
 	}
-	
+
 	var resp map[string]string
 	json.NewDecoder(w.Body).Decode(&resp)
 	if resp["error"] != "failed to lookup user" {
