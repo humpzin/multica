@@ -941,6 +941,81 @@ func TestGetChatSessionRejectsMalformedSessionID(t *testing.T) {
 	}
 }
 
+func TestCreateAutopilotRejectsMalformedAssigneeID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/autopilots", map[string]any{
+		"title":          "Malformed assignee autopilot",
+		"assignee_id":    "not-a-uuid",
+		"execution_mode": "run_only",
+	})
+	testHandler.CreateAutopilot(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreateAutopilot: expected 400 for malformed assignee_id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateAutopilotRejectsMalformedID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("PUT", "/api/autopilots/not-a-uuid", map[string]any{
+		"title": "Malformed autopilot id",
+	})
+	req = withURLParam(req, "id", "not-a-uuid")
+	testHandler.UpdateAutopilot(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateAutopilot: expected 400 for malformed id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateAgentRejectsMalformedAgentID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("PUT", "/api/agents/not-a-uuid", map[string]any{
+		"name": "Malformed agent id",
+	})
+	req = withURLParam(req, "id", "not-a-uuid")
+	testHandler.UpdateAgent(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateAgent: expected 400 for malformed id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateAgentRejectsMalformedRuntimeID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/agents", map[string]any{
+		"name":       "Malformed runtime agent",
+		"runtime_id": "not-a-uuid",
+	})
+	testHandler.CreateAgent(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreateAgent: expected 400 for malformed runtime_id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpdateAgentRejectsMalformedRuntimeID(t *testing.T) {
+	agentID := createHandlerTestAgent(t, "Handler Malformed Runtime Update", nil)
+
+	w := httptest.NewRecorder()
+	req := newRequest("PUT", "/api/agents/"+agentID, map[string]any{
+		"runtime_id": "not-a-uuid",
+	})
+	req = withURLParam(req, "id", agentID)
+	testHandler.UpdateAgent(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateAgent: expected 400 for malformed runtime_id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreatePinRejectsMalformedItemID(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/pins", map[string]any{
+		"item_type": "issue",
+		"item_id":   "not-a-uuid",
+	})
+	testHandler.CreatePin(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("CreatePin: expected 400 for malformed item_id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAgentCRUD(t *testing.T) {
 	// List agents
 	w := httptest.NewRecorder()

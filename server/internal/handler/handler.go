@@ -498,9 +498,18 @@ func (h *Handler) loadAgentForUser(w http.ResponseWriter, r *http.Request, agent
 		return db.Agent{}, false
 	}
 
+	agentUUID, ok := parseUUIDOrBadRequest(w, agentID, "agent id")
+	if !ok {
+		return db.Agent{}, false
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return db.Agent{}, false
+	}
+
 	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
-		ID:          parseUUID(agentID),
-		WorkspaceID: parseUUID(workspaceID),
+		ID:          agentUUID,
+		WorkspaceID: wsUUID,
 	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "agent not found")
