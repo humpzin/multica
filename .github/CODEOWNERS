@@ -1,0 +1,21 @@
+# Default owners (replace with team aliases when ready)
+* @humpzin
+
+# Backend / data / runtime critical paths
+/server/ @humpzin
+/server/migrations/ @humpzin
+/server/internal/handler/ @humpzin
+/server/internal/runtime/ @humpzin
+/server/internal/daemon/ @humpzin
+
+# CI / deployment
+/.github/workflows/ @humpzin
+/Dockerfile @humpzin
+/Dockerfile.web @humpzin
+/docker-compose*.yml @humpzin
+
+# Frontend shared packages
+/apps/ @humpzin
+/packages/ @humpzin
+/packages/core/platform/ @humpzin
+/packages/core/api/ @humpzin
