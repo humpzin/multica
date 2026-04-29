@@ -7,39 +7,27 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/
 import { Button } from "@multica/ui/components/ui/button";
 import type { Issue, IssueStatus } from "@multica/core/types";
 import { useLoadMoreByStatus } from "@multica/core/issues/mutations";
-import type { IssueListFilter, MyIssuesFilter } from "@multica/core/issues/queries";
-import { STATUS_CONFIG } from "@multica/core/issues/config";
+import type { MyIssuesFilter } from "@multica/core/issues/queries";
 import { useModalStore } from "@multica/core/modals";
 import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
 import { sortIssues } from "../utils/sort";
-import { StatusIcon } from "./status-icon";
+import { StatusHeading } from "./status-heading";
 import { ListRow, type ChildProgress } from "./list-row";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
 
 const EMPTY_PROGRESS_MAP = new Map<string, ChildProgress>();
 
-/**
- * Threaded into useLoadMoreByStatus — keeps pagination requests on the same
- * filter (or My Issues scope) as the page is currently rendering.
- */
-type LoadMoreOptions =
-  | { filter?: IssueListFilter; myIssues?: never }
-  | { filter?: never; myIssues: { scope: string; filter: MyIssuesFilter } };
-
 export function ListView({
   issues,
   visibleStatuses,
   childProgressMap = EMPTY_PROGRESS_MAP,
-  listFilter,
   myIssuesScope,
   myIssuesFilter,
 }: {
   issues: Issue[];
   visibleStatuses: IssueStatus[];
   childProgressMap?: Map<string, ChildProgress>;
-  /** Workspace list filter — pagination targets the matching filter cache. */
-  listFilter?: IssueListFilter;
   /** When set, per-status load-more targets the scoped cache instead of the workspace one. */
   myIssuesScope?: string;
   myIssuesFilter?: MyIssuesFilter;
@@ -70,9 +58,9 @@ export function ListView({
     [visibleStatuses, listCollapsedStatuses]
   );
 
-  const loadMoreOptions: LoadMoreOptions = myIssuesScope
-    ? { myIssues: { scope: myIssuesScope, filter: myIssuesFilter ?? {} } }
-    : { filter: listFilter };
+  const myIssuesOpts = myIssuesScope
+    ? { scope: myIssuesScope, filter: myIssuesFilter ?? {} }
+    : undefined;
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-2">
@@ -96,7 +84,7 @@ export function ListView({
             status={status}
             issues={issuesByStatus.get(status) ?? []}
             childProgressMap={childProgressMap}
-            loadMoreOptions={loadMoreOptions}
+            myIssuesOpts={myIssuesOpts}
           />
         ))}
       </Accordion.Root>
@@ -108,20 +96,19 @@ function StatusAccordionItem({
   status,
   issues,
   childProgressMap,
-  loadMoreOptions,
+  myIssuesOpts,
 }: {
   status: IssueStatus;
   issues: Issue[];
   childProgressMap: Map<string, ChildProgress>;
-  loadMoreOptions: LoadMoreOptions;
+  myIssuesOpts?: { scope: string; filter: MyIssuesFilter };
 }) {
-  const cfg = STATUS_CONFIG[status];
   const selectedIds = useIssueSelectionStore((s) => s.selectedIds);
   const select = useIssueSelectionStore((s) => s.select);
   const deselect = useIssueSelectionStore((s) => s.deselect);
   const { loadMore, hasMore, isLoading, total } = useLoadMoreByStatus(
     status,
-    loadMoreOptions,
+    myIssuesOpts,
   );
 
   const issueIds = issues.map((i) => i.id);
@@ -151,11 +138,7 @@ function StatusAccordionItem({
         </div>
         <Accordion.Trigger className="group/trigger flex flex-1 items-center gap-2 px-2 h-full text-left outline-none">
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
-          <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold ${cfg.badgeBg} ${cfg.badgeText}`}>
-            <StatusIcon status={status} className="h-3 w-3" inheritColor />
-            {cfg.label}
-          </span>
-          <span className="text-xs text-muted-foreground">{total}</span>
+          <StatusHeading status={status} count={total} />
         </Accordion.Trigger>
         <div className="pr-2">
           <Tooltip>

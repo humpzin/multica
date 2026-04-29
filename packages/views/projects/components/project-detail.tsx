@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
-import { useStore } from "zustand";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { Check, ChevronRight, Link2, ListTodo, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, UserMinus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -23,7 +22,7 @@ import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER, PR
 import { BOARD_STATUSES } from "@multica/core/issues/config";
 import { createIssueViewStore } from "@multica/core/issues/stores/view-store";
 import { ViewStoreProvider, useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { buildIssueListFilter } from "../../issues/utils/filter";
+import { filterIssues } from "../../issues/utils/filter";
 import { getProjectIssueMetrics } from "./project-issue-metrics";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink, useNavigation } from "../../navigation";
@@ -100,7 +99,6 @@ function ProjectIssuesContent({
   scope,
   filter,
 }: {
-  /** Issues already fetched server-side with this project + view-store filter applied. */
   projectIssues: Issue[];
   scope: string;
   filter: MyIssuesFilter;
@@ -108,12 +106,16 @@ function ProjectIssuesContent({
   const wsId = useWorkspaceId();
   const viewMode = useViewStore((s) => s.viewMode);
   const statusFilters = useViewStore((s) => s.statusFilters);
+  const priorityFilters = useViewStore((s) => s.priorityFilters);
+  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
+  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
+  const creatorFilters = useViewStore((s) => s.creatorFilters);
+  const labelFilters = useViewStore((s) => s.labelFilters);
 
-  // Server-side filtering means `projectIssues` already reflects priority /
-  // assignee / creator / label filters. Status filtering remains a render
-  // concern (each status bucket is fetched independently anyway, see
-  // visibleStatuses below).
-  const issues = projectIssues;
+  const issues = useMemo(
+    () => filterIssues(projectIssues, { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters: [], includeNoProject: false, labelFilters }),
+    [projectIssues, statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters],
+  );
 
   const { data: childProgressMap = new Map() } = useQuery(childIssueProgressOptions(wsId));
 
@@ -194,32 +196,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const workspaceName = workspace?.name;
   const { data: project, isLoading } = useQuery(projectDetailOptions(wsId, projectId));
   const projectScope = `project:${projectId}`;
-  // Read view-store filter state directly from the project's own view store
-  // (lives outside the ViewStoreProvider here). Merging it into the query
-  // filter means filter changes trigger a refetch under a fresh cache key
-  // — fixing the pagination bug where client-side filtering hid matches
-  // sitting past the first page (#1491).
-  const priorityFilters = useStore(projectViewStore, (s) => s.priorityFilters);
-  const assigneeFilters = useStore(projectViewStore, (s) => s.assigneeFilters);
-  const includeNoAssignee = useStore(projectViewStore, (s) => s.includeNoAssignee);
-  const creatorFilters = useStore(projectViewStore, (s) => s.creatorFilters);
-  const labelFilters = useStore(projectViewStore, (s) => s.labelFilters);
   const projectFilter = useMemo<MyIssuesFilter>(
-    () => ({
-      project_ids: [projectId],
-      ...buildIssueListFilter({
-        priorityFilters,
-        assigneeFilters,
-        includeNoAssignee,
-        creatorFilters,
-        // Project filter is fixed by the page route — view-store project
-        // selections don't apply here.
-        projectFilters: [],
-        includeNoProject: false,
-        labelFilters,
-      }),
-    }),
-    [projectId, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, labelFilters],
+    () => ({ project_id: projectId }),
+    [projectId],
   );
   const { data: projectIssues = [] } = useQuery(
     myIssueListOptions(wsId, projectScope, projectFilter),
@@ -398,8 +377,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                   <button type="button" className="inline-flex items-center gap-1.5 text-xs hover:text-foreground transition-colors">
                     {project.lead_type && project.lead_id ? (
                       <>
-                        <ActorAvatar actorType={project.lead_type} actorId={project.lead_id} size={16} />
-                        <span>{getActorName(project.lead_type, project.lead_id)}</span>
+                        <ActorAvatar actorType={project.lead_type} actorId={project.lead_id} size={16} enableHoverCard showStatusDot />
+                        <span className="cursor-pointer">{getActorName(project.lead_type, project.lead_id)}</span>
                       </>
                     ) : (
                       <span className="text-muted-foreground">No lead</span>
@@ -452,7 +431,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
                           onClick={() => { handleUpdateField({ lead_type: "agent", lead_id: a.id }); setLeadOpen(false); }}
                           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors"
                         >
-                          <ActorAvatar actorType="agent" actorId={a.id} size={16} />
+                          <ActorAvatar actorType="agent" actorId={a.id} size={16} showStatusDot />
                           <span>{a.name}</span>
                         </button>
                       ))}
@@ -601,7 +580,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           </PageHeader>
 
           <ViewStoreProvider store={projectViewStore}>
-              <IssuesHeader issues={projectIssues} />
+              <IssuesHeader scopedIssues={projectIssues} />
               <ProjectIssuesContent
                 projectIssues={projectIssues}
                 scope={projectScope}

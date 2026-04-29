@@ -40,6 +40,13 @@ type codexBackend struct {
 	cfg Config
 }
 
+func buildCodexArgs(opts ExecOptions, logger *slog.Logger) []string {
+	args := []string{"app-server", "--listen", "stdio://"}
+	args = append(args, filterCustomArgs(opts.ExtraArgs, codexBlockedArgs, logger)...)
+	args = append(args, filterCustomArgs(opts.CustomArgs, codexBlockedArgs, logger)...)
+	return args
+}
+
 func (b *codexBackend) Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error) {
 	execPath := b.cfg.ExecutablePath
 	if execPath == "" {
@@ -59,7 +66,7 @@ func (b *codexBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 
-	codexArgs := append([]string{"app-server", "--listen", "stdio://"}, filterCustomArgs(opts.CustomArgs, codexBlockedArgs, b.cfg.Logger)...)
+	codexArgs := buildCodexArgs(opts, b.cfg.Logger)
 	cmd := exec.CommandContext(runCtx, execPath, codexArgs...)
 	hideAgentWindow(cmd)
 	b.cfg.Logger.Info("agent command", "exec", execPath, "args", codexArgs)
