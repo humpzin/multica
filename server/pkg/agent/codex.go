@@ -17,7 +17,11 @@ import (
 // codexBlockedArgs are flags hardcoded by the daemon that must not be
 // overridden by user-configured custom_args.
 var codexBlockedArgs = map[string]blockedArgMode{
-	"--listen": blockedWithValue, // stdio:// transport for daemon communication
+	"--listen":    blockedWithValue, // stdio:// transport for daemon communication
+	"--full-auto": blockedStandalone, // root-command automation mode; rejected by `app-server`
+	"--trust":     blockedStandalone, // root-command trust mode; rejected by `app-server`
+	"--model":     blockedWithValue,  // model selection goes through ExecOptions.Model / thread params
+	"-m":          blockedWithValue,  // short model flag; rejected by `app-server`
 }
 
 // codexStderrTailBytes bounds the stderr tail captured for inclusion in

@@ -343,6 +343,16 @@ make check
 
 **Quick iteration:** If you know only TypeScript or Go is affected, run individual checks first for faster feedback, then finish with a full `make check` before marking work complete.
 
+### Windows Go verification note
+
+On Windows, `go test ./...` under `server/` is still useful as a broad regression sweep, but it is not currently a reliable "must be fully green" gate by itself. This repo has existing Windows-specific failures in areas such as daemon local-skill discovery, repocache path-length handling, shell-dependent tests, and some platform-sensitive agent assertions.
+
+Operational guidance:
+
+- For Go-only changes, first run targeted package tests for the code you touched.
+- Then, if time permits, run `go test ./...` from `server/` as a regression sweep.
+- Treat unrelated pre-existing Windows failures as follow-up work, not as automatic blockers for narrowly scoped changes whose targeted tests pass.
+
 ## CLI Release
 
 **Prerequisite:** A CLI release must accompany every Production deployment.

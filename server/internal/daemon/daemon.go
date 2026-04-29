@@ -1228,10 +1228,12 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 		return TaskResult{}, err
 	}
 
-	// Fallback: if session resume failed before establishing a session, retry
-	// with a fresh session. We check SessionID == "" to distinguish a resume
-	// failure (no session established) from a failure during actual execution.
-	if result.Status == "failed" && task.PriorSessionID != "" && result.SessionID == "" {
+	// Fallback: if session resume failed, retry once with a fresh session.
+	// The primary signal is SessionID == "" (resume failed before any session
+	// was established). Opencode sometimes reports a provider error against the
+	// resumed session ID itself before doing any work; treat that narrow shape
+	// as resume failure too so a stale session doesn't brick the issue forever.
+	if shouldRetryFreshSession(task.PriorSessionID, result, tools) {
 		firstUsage := result.Usage
 		taskLog.Warn("session resume failed, retrying with fresh session", "error", result.Error)
 		execOpts.ResumeSessionID = ""
@@ -1342,6 +1344,24 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, taskLo
 			Usage:     usageEntries,
 		}, nil
 	}
+}
+
+func shouldRetryFreshSession(priorSessionID string, result agent.Result, tools int32) bool {
+	if result.Status != "failed" || priorSessionID == "" {
+		return false
+	}
+	if result.SessionID == "" {
+		return true
+	}
+	if result.SessionID != priorSessionID {
+		return false
+	}
+	if tools != 0 || result.Output != "" {
+		return false
+	}
+	errMsg := strings.TrimSpace(result.Error)
+	return errMsg == "Error from provider: Provider returned error" ||
+		errMsg == "Provider returned error"
 }
 
 // executeAndDrain runs a backend, drains its message stream (forwarding to the

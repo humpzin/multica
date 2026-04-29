@@ -473,6 +473,29 @@ func TestOpencodeErrorMessage(t *testing.T) {
 			want: "RateLimitError",
 		},
 		{
+			name: "generic provider wrapper gets enriched with detail",
+			err: &opencodeError{
+				Name: "UnknownError",
+				Data: &opencodeErrData{
+					Message: "Error from provider: Provider returned error",
+					Detail:  "401 Unauthorized",
+					Cause:   "token expired",
+				},
+			},
+			want: "Error from provider: Provider returned error: 401 Unauthorized | token expired",
+		},
+		{
+			name: "specific message stays unchanged even if extras exist",
+			err: &opencodeError{
+				Name: "UnknownError",
+				Data: &opencodeErrData{
+					Message: "Model not found: bad/model",
+					Detail:  "upstream detail",
+				},
+			},
+			want: "Model not found: bad/model",
+		},
+		{
 			name: "empty",
 			err:  &opencodeError{},
 			want: "",

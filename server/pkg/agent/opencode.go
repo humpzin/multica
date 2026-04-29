@@ -417,15 +417,57 @@ type opencodeError struct {
 
 // Message returns the human-readable error message.
 func (e *opencodeError) Message() string {
+	if e == nil {
+		return ""
+	}
+
+	base := ""
 	if e.Data != nil && e.Data.Message != "" {
-		return e.Data.Message
+		base = e.Data.Message
+	} else if e.Name != "" {
+		base = e.Name
 	}
-	if e.Name != "" {
-		return e.Name
+
+	if base == "" {
+		return ""
 	}
-	return ""
+
+	parts := make([]string, 0, 4)
+	if e.Data != nil {
+		for _, extra := range []string{
+			strings.TrimSpace(e.Data.Detail),
+			strings.TrimSpace(e.Data.Details),
+			strings.TrimSpace(e.Data.Cause),
+			strings.TrimSpace(e.Data.Code),
+		} {
+			if extra == "" || extra == base {
+				continue
+			}
+			duplicate := false
+			for _, seen := range parts {
+				if seen == extra {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				parts = append(parts, extra)
+			}
+		}
+	}
+
+	// For generic provider wrappers, append any surviving detail so the task
+	// error becomes actionable (e.g. auth/rate-limit/provider-specific cause).
+	if len(parts) > 0 && (base == "Error from provider: Provider returned error" || base == "Provider returned error") {
+		return base + ": " + strings.Join(parts, " | ")
+	}
+	return base
 }
 
 type opencodeErrData struct {
 	Message string `json:"message,omitempty"`
+	Detail  string `json:"detail,omitempty"`
+	Details string `json:"details,omitempty"`
+	Cause   string `json:"cause,omitempty"`
+	Code    string `json:"code,omitempty"`
 }

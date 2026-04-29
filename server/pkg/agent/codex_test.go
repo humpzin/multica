@@ -865,6 +865,33 @@ func TestCodexStartOrResumeThreadFallsBackWhenResumeReturnsNoID(t *testing.T) {
 	}
 }
 
+func TestCodexFilterCustomArgsBlocksAppServerIncompatibleFlags(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.Default()
+	args := []string{
+		"--full-auto",
+		"--trust",
+		"--model", "gpt-5.4",
+		"-m", "gpt-5",
+		"--listen", "http://evil",
+		"--listen=stdio://evil",
+		"--verbose",
+	}
+
+	got := filterCustomArgs(args, codexBlockedArgs, logger)
+
+	want := []string{"--verbose"}
+	if len(got) != len(want) {
+		t.Fatalf("filtered args len = %d, want %d; got=%v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("filtered args[%d] = %q, want %q; got=%v", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestCodexStartOrResumeThreadStartFailureSurfaces(t *testing.T) {
 	t.Parallel()
 

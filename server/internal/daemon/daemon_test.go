@@ -423,6 +423,45 @@ func TestExecuteAndDrain_NoRetryWhenSessionEstablished(t *testing.T) {
 	}
 }
 
+func TestShouldRetryFreshSession_OpencodeOpaqueProviderErrorOnResumedSession(t *testing.T) {
+	t.Parallel()
+
+	got := shouldRetryFreshSession("ses_prior", agent.Result{
+		Status:    "failed",
+		Error:     "Error from provider: Provider returned error",
+		SessionID: "ses_prior",
+	}, 0)
+	if !got {
+		t.Fatal("expected retry for opaque provider error on resumed session before any tool ran")
+	}
+}
+
+func TestShouldRetryFreshSession_NoRetryAfterWorkStarted(t *testing.T) {
+	t.Parallel()
+
+	got := shouldRetryFreshSession("ses_prior", agent.Result{
+		Status:    "failed",
+		Error:     "Error from provider: Provider returned error",
+		SessionID: "ses_prior",
+	}, 1)
+	if got {
+		t.Fatal("should not retry when tool execution already started")
+	}
+}
+
+func TestShouldRetryFreshSession_NoRetryForFreshSessionFailure(t *testing.T) {
+	t.Parallel()
+
+	got := shouldRetryFreshSession("ses_prior", agent.Result{
+		Status:    "failed",
+		Error:     "Error from provider: Provider returned error",
+		SessionID: "ses_new",
+	}, 0)
+	if got {
+		t.Fatal("should not retry when the backend already switched to a different session")
+	}
+}
+
 func TestExecuteAndDrain_CodexInactivityReportsToolResultTranscript(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell-script fixture is POSIX-only")
