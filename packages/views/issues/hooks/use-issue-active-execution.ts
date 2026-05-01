@@ -2,33 +2,32 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
-import { issueKeys } from "@multica/core/issues/queries";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { agentTaskSnapshotOptions } from "@multica/core/agents/queries";
 
 /**
- * Subscribes to the per-issue task list and returns whether the issue
- * currently has an active (queued / dispatched / running) execution.
+ * Returns whether the given issue currently has an active
+ * (queued / dispatched / running) execution.
  *
- * The query cache is kept fresh by the global WS sync
- * (`use-realtime-sync.ts`) which invalidates `["issues", "tasks"]`
- * on every task lifecycle event — no local WS subscription needed.
+ * Uses the workspace-wide agent-task-snapshot query — a single API call
+ * shared across the entire app. The snapshot includes every active task
+ * (with issue_id) plus each agent's most recent terminal task.
+ * WS task lifecycle events invalidate the snapshot in useRealtimeSync,
+ * so this hook stays fresh without per-card API calls.
  */
 export function useIssueActiveExecution(issueId: string): boolean {
-  const { data: tasks = [] } = useQuery({
-    queryKey: issueKeys.tasks(issueId),
-    queryFn: () => api.listTasksByIssue(issueId),
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
-  });
+  const wsId = useWorkspaceId();
+  const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
 
   return useMemo(
     () =>
-      tasks.some(
+      snapshot.some(
         (t) =>
-          t.status === "queued" ||
-          t.status === "dispatched" ||
-          t.status === "running",
+          t.issue_id === issueId &&
+          (t.status === "queued" ||
+            t.status === "dispatched" ||
+            t.status === "running"),
       ),
-    [tasks],
+    [snapshot, issueId],
   );
 }
