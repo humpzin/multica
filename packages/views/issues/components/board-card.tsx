@@ -230,7 +230,8 @@ const animateLayoutChanges: AnimateLayoutChanges = (args) => {
 
 export const DraggableBoardCard = memo(function DraggableBoardCard({ issue, childProgress }: { issue: Issue; childProgress?: ChildProgress }) {
   const p = useWorkspacePaths();
-  const hasActiveExecution = useIssueActiveExecution(issue.id);
+  const wsId = useWorkspaceId();
+  const hasActiveExecution = useIssueActiveExecution(wsId, issue.id);
   const {
     attributes,
     listeners,

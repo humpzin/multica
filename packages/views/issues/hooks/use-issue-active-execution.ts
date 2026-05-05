@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@multica/core/hooks";
 import { agentTaskSnapshotOptions } from "@multica/core/agents/queries";
 
 /**
@@ -15,8 +14,7 @@ import { agentTaskSnapshotOptions } from "@multica/core/agents/queries";
  * WS task lifecycle events invalidate the snapshot in useRealtimeSync,
  * so this hook stays fresh without per-card API calls.
  */
-export function useIssueActiveExecution(issueId: string): boolean {
-  const wsId = useWorkspaceId();
+export function useIssueActiveExecution(wsId: string, issueId: string): boolean {
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
 
   return useMemo(
